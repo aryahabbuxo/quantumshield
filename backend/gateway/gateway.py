@@ -44,6 +44,8 @@ class Gateway:
     config: OptimizationConfig
     sessions: dict = field(default_factory=dict)
     uplink_key: bytes | None = None          # set by GridServer.register_gateway()
+    alive: bool = True                       # False = crashed (used by GatewayCluster for failover)
+    cache_listeners: list = field(default_factory=list)   # called when a certificate is cached
 
     def __post_init__(self):
         self.cache = CertCache(self.config.cache_ttl_s)
@@ -143,4 +145,6 @@ class GatewayConnection:
         self.gw.sessions[session_id] = Session(self.leaf, self.chain, key)
         if self.gw.config.cache and not self.cache_hit:
             self.gw.cache.put(self.leaf)
+            for notify in self.gw.cache_listeners:     # e.g. replicate to backup gateways
+                notify(self.leaf)
         return encode(MsgType.HANDSHAKE_RESULT, b"\x01", session_id)
