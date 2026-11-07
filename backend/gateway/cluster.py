@@ -80,7 +80,7 @@ class GatewayCluster:
     def _replicate(self, source: Gateway, cert) -> None:
         for g in self.gateways:
             if g is not source and g.alive:
-                g.cache.put(cert)
+                g.cache.put(cert, g.clock())
 
     def _get(self, name: str) -> Gateway:
         for g in self.gateways:
