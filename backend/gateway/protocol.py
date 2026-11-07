@@ -11,7 +11,7 @@ from .client import DeviceClient
 from .gateway import Gateway
 from .grid_server import GridServer
 from .link import DirectLink
-from .messages import MsgType
+from .messages import MsgType, decode
 
 
 @dataclass
@@ -56,22 +56,32 @@ def run_session(client: DeviceClient, gateway: Gateway, grid: GridServer,
                 readings: list[bytes], connection: str = "first", link=None) -> SessionRecord:
     link = link or DirectLink()
     t = _Timer()
-    conn = gateway.connect()
+    conn = None
     reason, ok = "", False
 
     def record() -> SessionRecord:
-        hs = link.bytes_up + link.bytes_down
-        return SessionRecord(gateway.config.name, client.device_id, connection, ok, reason, conn.cache_hit,
+        return SessionRecord(gateway.config.name, client.device_id, connection, ok, reason,
+                             bool(conn and conn.cache_hit),
                              link.bytes_up, link.bytes_down, link.bytes_upstream, hs_bytes, link.messages,
                              round(t.ms["device"], 3), round(t.ms["gateway"], 3), round(t.ms["grid"], 3),
                              round(link.network_s * 1000, 3))
 
     hs_bytes = 0
     try:
+        conn = gateway.connect()                  # raises ConnectionError if every gateway is down
         resp = link.down(t.run("gateway", conn.on_client_hello, link.up(t.run("device", client.client_hello))))
-        if resp[0] == MsgType.CERT_REQUIRED:      # cache miss / unknown intermediate -> one extra round trip
-            hello = link.up(t.run("device", client.client_hello, True))
-            resp = link.down(t.run("gateway", conn.on_client_hello, hello))
+        # CERT_REQUIRED costs one extra round trip each time:
+        #   cache miss -> resend without the fingerprint (leaf-only if chain optimization is on)
+        #   unknown intermediate / chain optimization off -> resend the full chain
+        for _ in range(2):
+            if resp[0] != MsgType.CERT_REQUIRED:
+                break
+            _, (why,) = decode(resp, MsgType.CERT_REQUIRED)
+            if why == b"cache miss":
+                hello = t.run("device", client.client_hello, False, True)
+            else:
+                hello = t.run("device", client.client_hello, True)
+            resp = link.down(t.run("gateway", conn.on_client_hello, link.up(hello)))
         if resp[0] == MsgType.HANDSHAKE_RESULT:   # rejected at hello
             ok, reason = client.on_result(resp)
             hs_bytes = link.bytes_up + link.bytes_down

@@ -32,9 +32,10 @@ class DeviceClient:
         self.seq = 0
 
     # -------------------------------------------------------- handshake ---
-    def client_hello(self, force_full: bool = False) -> bytes:
+    def client_hello(self, force_full: bool = False, skip_cache: bool = False) -> bytes:
+        """force_full: send the whole chain. skip_cache: don't send the fingerprint (after a cache miss)."""
         self.nonce = os.urandom(32)
-        if self.config.cache and self.cached_at_gateway and not force_full:
+        if self.config.cache and self.cached_at_gateway and not (force_full or skip_cache):
             mode, payload = CertMode.FINGERPRINT, self.cert.fingerprint()
         elif self.config.chain_opt and not force_full:
             mode, payload = CertMode.LEAF_ONLY, pack_fields(self.cert.to_bytes())

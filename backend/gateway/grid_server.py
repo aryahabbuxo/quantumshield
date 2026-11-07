@@ -7,6 +7,8 @@ authenticated with the gateway's ML-DSA certificate (register_gateway).
 import hashlib
 from dataclasses import dataclass, field
 
+from cryptography.exceptions import InvalidTag
+
 from backend.crypto import pqc, symmetric
 from backend.crypto.pki import Certificate
 
@@ -32,10 +34,18 @@ class GridServer:
         grid_secret = pqc.decapsulate(ciphertext, kem)                       # grid side
         gateway.uplink_key = symmetric.derive_session_key(gw_secret, b"qsg-uplink")
         self.channels[gateway.name] = symmetric.derive_session_key(grid_secret, b"qsg-uplink")
-        self.gateway_name = gateway.name
+
+    def _open(self, data: bytes) -> tuple[str, bytes]:
+        """Find which registered gateway sent this (AES-GCM only opens with the right key)."""
+        for name, key in self.channels.items():
+            try:
+                return name, symmetric.decrypt(key, data)
+            except InvalidTag:
+                continue
+        raise PermissionError("message not from a registered gateway")
 
     def receive(self, data: bytes) -> dict:
-        inner = symmetric.decrypt(self.channels[self.gateway_name], data)   # authenticated channel
+        gateway_name, inner = self._open(data)                             # authenticated channel
         msg_type, f = decode(inner)
 
         if msg_type == MsgType.UPSTREAM_SESSION:                            # end-to-end mode only
@@ -51,7 +61,7 @@ class GridServer:
             msg = hashlib.sha256(device_id.encode() + seq + reading).digest()
             if cert is None or not pqc.verify(msg, device_sig, cert.public_key, cert.sig_alg):
                 raise PermissionError("device signature invalid at grid server")
-        record = {"type": "reading", "device": device_id, "reading": reading,
+        record = {"type": "reading", "device": device_id, "reading": reading, "via": gateway_name,
                   "verified_by": "device" if mode == b"\x00" else "gateway"}
         self.readings.append(record)
         return record

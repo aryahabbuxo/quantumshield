@@ -10,6 +10,7 @@ from backend.crypto import pqc
 from backend.crypto.pki import CertificateAuthority
 
 from .client import DeviceClient
+from .cluster import GatewayCluster
 from .config import OptimizationConfig
 from .gateway import Gateway
 from .grid_server import GridServer
@@ -22,7 +23,7 @@ DEVICE_PREFIXES = ["EV", "SOLAR", "BAT"]
 class Testbed:
     root: CertificateAuthority
     intermediate: CertificateAuthority
-    gateway: Gateway
+    gateway: Gateway | GatewayCluster
     grid: GridServer
     devices: list[DeviceClient]
 
@@ -35,17 +36,22 @@ def _trust(root: CertificateAuthority, inter: CertificateAuthority, with_interme
     return t
 
 
-def build_testbed(config: OptimizationConfig, n_devices: int = 3) -> Testbed:
+def build_testbed(config: OptimizationConfig, n_devices: int = 3,
+                  n_gateways: int = 1, replicate_cache: bool = True) -> Testbed:
+    """n_gateways > 1 returns a GatewayCluster (primary + backups) as `gateway`."""
     root = CertificateAuthority.create_root("QSG Root CA")
     inter = root.create_intermediate("QSG Intermediate CA")
-
-    # The gateway always holds the intermediate in its trust store; whether devices
-    # still SEND it is what the chain-transmission optimization changes.
-    gw_kp = pqc.sig_keygen()
-    gateway = Gateway("GW_001", gw_kp, inter.issue("GW_001", gw_kp.public_key),
-                      _trust(root, inter, True), config)
     grid = GridServer(_trust(root, inter, True))
-    grid.register_gateway(gateway)
+
+    # Each gateway always holds the intermediate in its trust store; whether devices
+    # still SEND it is what the chain-transmission optimization changes.
+    gateways = []
+    for i in range(n_gateways):
+        name, gw_kp = f"GW_{i + 1:03d}", pqc.sig_keygen()
+        g = Gateway(name, gw_kp, inter.issue(name, gw_kp.public_key), _trust(root, inter, True), config)
+        grid.register_gateway(g)
+        gateways.append(g)
+    gateway = gateways[0] if n_gateways == 1 else GatewayCluster(gateways, replicate_cache)
 
     devices = []
     for i in range(n_devices):
