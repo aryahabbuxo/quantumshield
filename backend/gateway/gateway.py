@@ -13,6 +13,8 @@ Trust model (write this in the paper):
 import hashlib
 import os
 import struct
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from cryptography.exceptions import InvalidTag
@@ -46,6 +48,11 @@ class Gateway:
     uplink_key: bytes | None = None          # set by GridServer.register_gateway()
     alive: bool = True                       # False = crashed (used by GatewayCluster for failover)
     cache_listeners: list = field(default_factory=list)   # called when a certificate is cached
+    clock: Callable[[], float] = time.time   # replaceable so experiments can simulate days in seconds
+    # Optional live revocation check (OCSP-style), run on every FULL validation but not on a
+    # cache hit. Returns True if the certificate is revoked. Between checks the gateway relies on
+    # its local revocation list, which is refreshed periodically.
+    status_check: Callable[[Certificate], bool] | None = None
 
     def __post_init__(self):
         self.cache = CertCache(self.config.cache_ttl_s)
@@ -98,13 +105,13 @@ class GatewayConnection:
         return encode(MsgType.HANDSHAKE_RESULT, b"\x00", reason.encode())
 
     def on_client_hello(self, data: bytes) -> bytes:
-        cfg, trust = self.gw.config, self.gw.trust
+        cfg, trust, now = self.gw.config, self.gw.trust, self.gw.clock()
         _, (device_id, client_nonce, mode_b, payload) = decode(data, MsgType.CLIENT_HELLO)
         mode = CertMode(mode_b[0])
         self.chain: list[Certificate] = []
 
         if mode == CertMode.FINGERPRINT:
-            cert = self.gw.cache.get(payload, trust.revoked) if cfg.cache else None
+            cert = self.gw.cache.get(payload, trust.revoked, now) if cfg.cache else None
             if cert is None:
                 return encode(MsgType.CERT_REQUIRED, b"cache miss")      # device resends full chain
             self.leaf, self.cache_hit = cert, True
@@ -114,11 +121,14 @@ class GatewayConnection:
             certs = [Certificate.from_bytes(b) for b in unpack_fields(payload)]
             leaf, supplied = certs[0], certs[1:]
             try:
-                trust.validate(leaf, supplied, use_memo=cfg.gateway_assisted)
+                trust.validate(leaf, supplied, use_memo=cfg.gateway_assisted, now=now)
             except ValidationError as e:
                 if mode == CertMode.LEAF_ONLY and "unknown issuer" in str(e):
                     return encode(MsgType.CERT_REQUIRED, b"unknown intermediate")
                 return self._reject(str(e))
+            if self.gw.status_check is not None and self.gw.status_check(leaf):
+                trust.revoke(leaf.serial)              # remember it locally too
+                return self._reject(f"{leaf.subject}: certificate revoked (live status check)")
             self.leaf, self.chain = leaf, supplied   # chain is forwarded upstream in end-to-end mode
 
         if self.leaf.subject != device_id.decode():
@@ -144,7 +154,7 @@ class GatewayConnection:
         session_id = os.urandom(16)
         self.gw.sessions[session_id] = Session(self.leaf, self.chain, key)
         if self.gw.config.cache and not self.cache_hit:
-            self.gw.cache.put(self.leaf)
+            self.gw.cache.put(self.leaf, self.gw.clock())
             for notify in self.gw.cache_listeners:     # e.g. replicate to backup gateways
                 notify(self.leaf)
         return encode(MsgType.HANDSHAKE_RESULT, b"\x01", session_id)
