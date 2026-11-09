@@ -1,0 +1,67 @@
+# Experiment configuration for QuantumShield Grid
+# Person D: Security and Experiments Lead
+
+experiment:
+  name: "quantumshield_grid_benchmarks"
+  description: "Post-quantum overhead and optimization ablation study on smart-grid links"
+  trials_per_config: 100        # 100+ measured runs per configuration
+  devices_count: 5              # clean-energy devices (EV chargers, solar inverters, batteries)
+  readings_per_session: 5       # telemetry readings per session
+  reading_payload_bytes: 128    # realistic voltage, current, active power, status JSON payload
+
+configurations:
+  - name: "baseline"
+    cache: false
+    chain_opt: false
+    gateway_assisted: false
+  - name: "cache"
+    cache: true
+    chain_opt: false
+    gateway_assisted: false
+  - name: "chain"
+    cache: false
+    chain_opt: true
+    gateway_assisted: false
+  - name: "assisted"
+    cache: false
+    chain_opt: false
+    gateway_assisted: true
+  - name: "cache+chain"
+    cache: true
+    chain_opt: true
+    gateway_assisted: false
+  - name: "cache+assisted"
+    cache: true
+    chain_opt: false
+    gateway_assisted: true
+  - name: "chain+assisted"
+    cache: false
+    chain_opt: true
+    gateway_assisted: true
+  - name: "cache+chain+assisted"
+    cache: true
+    chain_opt: true
+    gateway_assisted: true
+
+network_presets:
+  - name: "Urban 5G"
+    bandwidth_bps: 100000000    # 100 Mbps
+    rtt_s: 0.015                # 15 ms
+    loss_rate: 0.000            # 0%
+    mtu: 1500
+  - name: "Highway 4G"
+    bandwidth_bps: 20000000     # 20 Mbps
+    rtt_s: 0.060                # 60 ms
+    loss_rate: 0.005            # 0.5%
+    mtu: 1500
+  - name: "Rural 2G (lossy)"
+    bandwidth_bps: 100000       # 100 kbps
+    rtt_s: 0.450                # 450 ms
+    loss_rate: 0.040            # 4.0%
+    mtu: 576
+
+outputs:
+  results_dir: "results"
+  raw_csv: "results/benchmark_runs.csv"
+  summary_csv: "results/benchmark_summary.csv"
+  attacks_csv: "results/attack_results.csv"
