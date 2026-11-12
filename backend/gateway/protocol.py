@@ -31,13 +31,23 @@ class SessionRecord:
     gateway_ms: float
     grid_ms: float
     network_ms: float
+    # filled when the session runs over the network model (backend.network.EmulatedLink)
+    network: str = "direct"
+    wire_bytes: int = 0          # bytes on the wire incl. IP/TCP headers and retransmissions
+    packets: int = 0
+    retransmissions: int = 0
+
+    @property
+    def latency_ms(self) -> float:
+        """End-to-end session time: computation on every side + simulated network time."""
+        return self.device_ms + self.gateway_ms + self.grid_ms + self.network_ms
 
     @property
     def total_bytes(self) -> int:
         return self.bytes_up + self.bytes_down + self.bytes_upstream
 
     def to_dict(self) -> dict:
-        return {**asdict(self), "total_bytes": self.total_bytes}
+        return {**asdict(self), "total_bytes": self.total_bytes, "latency_ms": round(self.latency_ms, 3)}
 
 
 class _Timer:
@@ -64,7 +74,10 @@ def run_session(client: DeviceClient, gateway: Gateway, grid: GridServer,
                              bool(conn and conn.cache_hit),
                              link.bytes_up, link.bytes_down, link.bytes_upstream, hs_bytes, link.messages,
                              round(t.ms["device"], 3), round(t.ms["gateway"], 3), round(t.ms["grid"], 3),
-                             round(link.network_s * 1000, 3))
+                             round(link.network_s * 1000, 3),
+                             getattr(getattr(link, "preset", None), "name", "direct"),
+                             getattr(link, "wire_bytes", 0), getattr(link, "packets_transmitted", 0),
+                             getattr(link, "packets_retransmitted", 0))
 
     hs_bytes = 0
     try:

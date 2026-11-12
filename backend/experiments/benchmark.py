@@ -96,12 +96,12 @@ def run_single_config_benchmark(config: OptimizationConfig,
         telemetry_readings = [generate_sample_telemetry(dev.device_id, i) for i in range(readings_count)]
 
         # Session 1: First connection
-        link1 = EmulatedLink(preset=preset) if preset else None
+        link1 = EmulatedLink(preset=preset, seed=2 * trial_idx) if preset else None  # new loss pattern per trial
         rec1 = run_session(dev, tb.gateway, tb.grid, telemetry_readings, connection="first", link=link1)
         records.append(rec1)
 
         # Session 2: Repeat connection
-        link2 = EmulatedLink(preset=preset) if preset else None
+        link2 = EmulatedLink(preset=preset, seed=2 * trial_idx + 1) if preset else None
         rec2 = run_session(dev, tb.gateway, tb.grid, telemetry_readings, connection="repeat", link=link2)
         records.append(rec2)
 
@@ -184,7 +184,7 @@ def generate_all_charts(records: list[SessionRecord],
     _plot_ablation_study(summary, output_dir / "ablation_study.png")
 
     # --- Figure 4: Cumulative Bytes over Repeated Reconnect Sessions ---
-    _plot_cumulative_bytes_growth(output_dir / "cumulative_bytes_timeline.png")
+    _plot_cumulative_bytes_growth(records, output_dir / "cumulative_bytes_timeline.png")
 
     # --- Figure 5: Security Matrix (100% Block Rate) ---
     _plot_security_matrix(attack_results, output_dir / "security_attack_matrix.png")
@@ -256,7 +256,7 @@ def _plot_network_latency(summary: list[dict[str, Any]], output_path: Path) -> N
     ax.set_yscale("log")
     ax.set_title("Connection Latency Across India Network Profiles", fontsize=13, fontweight="bold", pad=12)
     ax.set_xticks(x)
-    ax.set_xticklabels(["Urban 5G\n(100 Mbps, 15ms)", "Highway 4G\n(20 Mbps, 60ms)", "Rural 2G\n(100 kbps, 450ms, 4% loss)"], fontsize=10)
+    ax.set_xticklabels([f"{p.name}\n({p.bandwidth_bps / 1e6:g} Mbps, {p.rtt_s * 1000:g} ms, {p.loss_rate:.1%} loss)" for p in ALL_PRESETS], fontsize=9)
     ax.legend(frameon=True, fontsize=10)
     ax.grid(axis="y", which="both", linestyle="--", alpha=0.5)
 
@@ -314,35 +314,32 @@ def _plot_ablation_study(summary: list[dict[str, Any]], output_path: Path) -> No
     plt.close()
 
 
-def _plot_cumulative_bytes_growth(output_path: Path) -> None:
-    """Simulate and plot cumulative data transmitted over 1 to 50 reconnect sessions."""
+def _plot_cumulative_bytes_growth(records: list[SessionRecord], output_path: Path) -> None:
+    """Cumulative data over 1 to 50 reconnect sessions, built ONLY from measured session records."""
+    def mean_bytes(config: str, connection: str) -> float:
+        vals = [r.total_bytes for r in records if r.config == config and r.connection == connection]
+        return float(np.mean(vals)) / 1024 if vals else 0.0
+
     sessions = np.arange(1, 51)
-    # Measured byte values:
-    # Baseline: ~21.5 KB per session (every handshake re-sends full chain and re-authenticates)
-    # Optimized: Session 1 ~16 KB (chain opt), Sessions 2-50 ~2.2 KB (cache hit + assisted validation)
-    baseline_bytes = sessions * 21.5
-    optimized_bytes = np.zeros(len(sessions))
-    optimized_bytes[0] = 16.2
-    for i in range(1, len(sessions)):
-        optimized_bytes[i] = optimized_bytes[i - 1] + 2.3
+    base_first, base_repeat = mean_bytes("baseline", "first"), mean_bytes("baseline", "repeat")
+    opt_first, opt_repeat = mean_bytes(COMBINED.name, "first"), mean_bytes(COMBINED.name, "repeat")
+    baseline_bytes = base_first + (sessions - 1) * base_repeat
+    optimized_bytes = opt_first + (sessions - 1) * opt_repeat
 
     fig, ax = plt.subplots(figsize=(8.5, 5), dpi=300)
-    ax.plot(sessions, baseline_bytes, label="Baseline PQC (No Optimizations)", color="#d62728", linewidth=2.5)
-    ax.plot(sessions, optimized_bytes, label="Optimized QuantumShield Grid", color="#2ca02c", linewidth=2.5)
-    ax.fill_between(sessions, optimized_bytes, baseline_bytes, color="#2ca02c", alpha=0.15, label="Bytes Saved")
-
-    ax.set_xlabel("Cumulative Reconnect Sessions", fontsize=12, fontweight="bold")
-    ax.set_ylabel("Total Cumulative Data (KB)", fontsize=12, fontweight="bold")
-    ax.set_title("Data Growth Over Repeated Grid Device Telemetry Sessions", fontsize=13, fontweight="bold", pad=12)
+    ax.plot(sessions, baseline_bytes, label="Baseline PQC (no optimizations)", color="#d62728", linewidth=2.5)
+    ax.plot(sessions, optimized_bytes, label="All three optimizations", color="#2ca02c", linewidth=2.5)
+    ax.fill_between(sessions, optimized_bytes, baseline_bytes, color="#2ca02c", alpha=0.15, label="Bytes saved")
+    ax.set_xlabel("Reconnect sessions (one device)", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Cumulative data (KB)", fontsize=12, fontweight="bold")
+    ax.set_title("Cumulative data over repeated sessions (from measured means)", fontsize=13, fontweight="bold", pad=12)
     ax.legend(frameon=True, loc="upper left", fontsize=11)
     ax.grid(True, linestyle="--", alpha=0.7)
-
-    savings_at_50 = (baseline_bytes[-1] - optimized_bytes[-1]) / baseline_bytes[-1] * 100.0
-    ax.annotate(f"88.1% Cumulative Savings\nat Session 50",
-                xy=(50, optimized_bytes[-1]), xytext=(35, 300),
-                arrowprops=dict(arrowstyle="->", color="black", lw=1.5),
-                fontsize=10, fontweight="bold", bbox=dict(boxstyle="round,pad=0.4", fc="yellow", alpha=0.3))
-
+    if baseline_bytes[-1] > 0:
+        savings = (baseline_bytes[-1] - optimized_bytes[-1]) / baseline_bytes[-1] * 100.0
+        ax.annotate(f"{savings:.1f}% saved after 50 sessions", xy=(50, optimized_bytes[-1]),
+                    xytext=(30, baseline_bytes[-1] * 0.55), arrowprops=dict(arrowstyle="->", lw=1.5),
+                    fontsize=10, fontweight="bold", bbox=dict(boxstyle="round,pad=0.4", fc="yellow", alpha=0.3))
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close()

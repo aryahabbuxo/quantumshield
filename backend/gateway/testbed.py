@@ -37,8 +37,10 @@ def _trust(root: CertificateAuthority, inter: CertificateAuthority, with_interme
 
 
 def build_testbed(config: OptimizationConfig, n_devices: int = 3,
-                  n_gateways: int = 1, replicate_cache: bool = True) -> Testbed:
-    """n_gateways > 1 returns a GatewayCluster (primary + backups) as `gateway`."""
+                  n_gateways: int = 1, replicate_cache: bool = True,
+                  device_ids: list[str] | None = None) -> Testbed:
+    """n_gateways > 1 returns a GatewayCluster (primary + backups) as `gateway`.
+    device_ids: optional names for the devices (used by the device fleet); overrides n_devices."""
     root = CertificateAuthority.create_root("QSG Root CA")
     inter = root.create_intermediate("QSG Intermediate CA")
     grid = GridServer(_trust(root, inter, True))
@@ -54,8 +56,8 @@ def build_testbed(config: OptimizationConfig, n_devices: int = 3,
     gateway = gateways[0] if n_gateways == 1 else GatewayCluster(gateways, replicate_cache)
 
     devices = []
-    for i in range(n_devices):
-        device_id = f"{DEVICE_PREFIXES[i % 3]}_{i // 3 + 1:03d}"
+    ids = device_ids or [f"{DEVICE_PREFIXES[i % 3]}_{i // 3 + 1:03d}" for i in range(n_devices)]
+    for device_id in ids:
         kp = pqc.sig_keygen()
         devices.append(DeviceClient(device_id, kp, inter.issue(device_id, kp.public_key), [inter.cert],
                                     _trust(root, inter, True), config))

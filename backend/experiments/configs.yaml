@@ -43,22 +43,25 @@ configurations:
     chain_opt: true
     gateway_assisted: true
 
-network_presets:
+network_presets:            # single source of truth: backend/network/presets.py (assumptions, cite before paper)
   - name: "Urban 5G"
     bandwidth_bps: 100000000    # 100 Mbps
-    rtt_s: 0.015                # 15 ms
-    loss_rate: 0.000            # 0%
+    rtt_s: 0.020                # 20 ms
+    loss_rate: 0.001            # 0.1%
     mtu: 1500
+    jitter_s: 0.005
   - name: "Highway 4G"
-    bandwidth_bps: 20000000     # 20 Mbps
+    bandwidth_bps: 15000000     # 15 Mbps
     rtt_s: 0.060                # 60 ms
-    loss_rate: 0.005            # 0.5%
+    loss_rate: 0.01             # 1%
     mtu: 1500
+    jitter_s: 0.020
   - name: "Rural 2G (lossy)"
     bandwidth_bps: 100000       # 100 kbps
-    rtt_s: 0.450                # 450 ms
-    loss_rate: 0.040            # 4.0%
+    rtt_s: 0.300                # 300 ms
+    loss_rate: 0.05             # 5%
     mtu: 576
+    jitter_s: 0.080
 
 outputs:
   results_dir: "results"
