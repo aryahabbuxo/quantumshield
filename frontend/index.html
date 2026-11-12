@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%279%27 fill=%27%237ee0b4%27/%3E%3Ctext x=%2716%27 y=%2721%27 font-size=%2713%27 text-anchor=%27middle%27 font-family=%27Arial%27 font-weight=%27700%27 fill=%27%230b1a12%27%3EQS%3C/text%3E%3C/svg%3E">
+<title>QuantumShield Grid · Control Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/vendor/leaflet.css">
+<script src="/vendor/leaflet.js"></script>
+<script src="/vendor/chart.umd.js"></script>
+<style>
+:root{
+  --panel:rgba(17,21,20,.82); --panel2:rgba(255,255,255,.055); --stroke:rgba(255,255,255,.10); --stroke2:rgba(255,255,255,.18);
+  --text:#f2f5f3; --muted:rgba(236,242,239,.74); --faint:rgba(236,242,239,.5);
+  --accent:#7ee0b4; --accent-d:#2fae7f; --lime:#c8f169; --warn:#f4c35a; --bad:#ff7466; --cache:#bba2ff;
+  --ev:#86b7ff; --solar:#f4c35a; --bat:#7ee0b4;
+  --gap:12px; --side:300px; --rside:330px;
+}
+@media (min-width:1800px){:root{--side:340px;--rside:370px;--gap:16px} html{font-size:15px}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#0a0d0c;color:var(--text);font:14px/1.45 Outfit,"Segoe UI",system-ui,sans-serif}
+button{font:inherit;color:inherit}
+#map{position:fixed;inset:0;z-index:0;background:#0b0e0d}
+.leaflet-tile-pane{filter:grayscale(.5) brightness(.6) contrast(1.1)}
+.leaflet-control-zoom{display:none}
+.leaflet-control-attribution{background:rgba(10,13,12,.7)!important;color:var(--faint)!important;font-size:10px}
+.leaflet-control-attribution a{color:var(--muted)!important}
+.shade{position:fixed;inset:0;z-index:1;pointer-events:none;background:linear-gradient(90deg,rgba(6,9,8,.75),transparent 28%,transparent 72%,rgba(6,9,8,.75)),linear-gradient(180deg,rgba(6,9,8,.6),transparent 14%,transparent 84%,rgba(6,9,8,.7))}
+.panel{background:var(--panel);border:1px solid var(--stroke);border-radius:18px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 14px 40px rgba(0,0,0,.35)}
+.ui{position:fixed;z-index:10}
+
+/* rail */
+.rail{left:var(--gap);top:var(--gap);bottom:var(--gap);width:56px;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 0}
+.brand{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,var(--lime),var(--accent));display:grid;place-items:center;color:#0b1a12;font-weight:700;font-size:13px;margin-bottom:8px}
+.rbtn{width:40px;height:40px;border-radius:12px;border:1px solid transparent;background:transparent;display:grid;place-items:center;cursor:pointer;color:var(--muted);position:relative}
+.rbtn svg{width:19px;height:19px}
+.rbtn:hover{background:var(--panel2);color:var(--text)}
+.rbtn.on{background:rgba(126,224,180,.15);border-color:rgba(126,224,180,.4);color:var(--accent)}
+.tip{position:absolute;left:50px;white-space:nowrap;background:#121615;border:1px solid var(--stroke);padding:4px 9px;border-radius:8px;font-size:12px;opacity:0;pointer-events:none;transition:opacity .12s;color:var(--text)}
+.rbtn:hover .tip{opacity:1}
+.rail .sp{flex:1}
+
+/* top */
+.title{left:calc(56px + var(--gap) * 2);top:calc(var(--gap) + 2px)}
+.title h1{margin:0;font-weight:600;font-size:20px;letter-spacing:-.2px;line-height:1.15}
+.title p{margin:1px 0 0;color:var(--muted);font-size:12.5px}
+.topbar{left:50%;transform:translateX(-50%);top:var(--gap);display:flex;align-items:center;gap:4px;padding:5px;border-radius:999px}
+.seg button{border:0;background:transparent;padding:7px 15px;border-radius:999px;cursor:pointer;color:var(--muted);font-weight:500;font-size:13.5px}
+.seg button:hover{color:var(--text)}
+.seg button.on{background:rgba(255,255,255,.14);color:var(--text);box-shadow:inset 0 0 0 1px var(--stroke2)}
+.netinfo{color:var(--muted);font-size:12px;padding:0 12px 0 8px;white-space:nowrap;border-left:1px solid var(--stroke2);margin-left:4px}
+.status{right:var(--gap);top:var(--gap);display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:999px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.status b{color:var(--text);font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-right:6px;vertical-align:0}
+.dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+
+/* columns */
+.col{top:calc(var(--gap) + 58px);bottom:calc(var(--gap) + 70px);display:flex;flex-direction:column;gap:var(--gap)}
+.left{left:calc(56px + var(--gap) * 2);width:var(--side)}
+.right{right:var(--gap);width:var(--rside)}
+.card{padding:14px 16px}
+.card h3{margin:0 0 10px;font-weight:600;font-size:13px;color:var(--text);display:flex;align-items:center;justify-content:space-between}
+.card h3 small{color:var(--faint);font-weight:400;font-size:11.5px}
+.hero .big{font-size:46px;font-weight:300;letter-spacing:-2px;line-height:1;margin:2px 0 2px}
+.hero .big span{font-size:22px;color:var(--muted);margin-left:2px}
+.hero .cap{color:var(--muted);font-size:12px}
+.spark{height:46px;margin:8px -2px 4px;position:relative}
+.sparkcap{display:flex;justify-content:space-between;color:var(--faint);font-size:10.5px;margin-bottom:6px}
+.minis{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.mini{background:var(--panel2);border:1px solid var(--stroke);border-radius:11px;padding:7px 9px}
+.mini .v{font-size:16px;font-weight:600;letter-spacing:-.2px;white-space:nowrap}
+.mini .l{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.sw{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--stroke);cursor:pointer}
+.sw:first-of-type{border-top:0;padding-top:0}
+.sw .t{flex:1;min-width:0}
+.sw .t b{display:block;font-weight:500;font-size:13.5px}
+.sw .t em{display:block;font-style:normal;color:var(--muted);font-size:11.5px;line-height:1.35}
+.tg{position:relative;width:40px;height:23px;flex:none;display:block}
+.tg input{position:absolute;opacity:0;width:0;height:0}
+.tg i{position:absolute;inset:0;border-radius:999px;background:rgba(255,255,255,.18);transition:background .2s}
+.tg i:after{content:"";position:absolute;left:3px;top:3px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .2s}
+.tg input:checked+i{background:var(--accent-d)}
+.tg input:checked+i:after{left:20px}
+.pending{font-size:11.5px;color:var(--warn);margin-top:8px;display:none}
+.apply{margin-top:10px;width:100%;border:0;border-radius:12px;padding:10px;font-weight:600;cursor:pointer;background:linear-gradient(135deg,var(--lime),var(--accent));color:#0b1a12;font-size:14px}
+.apply:hover{filter:brightness(1.06)}
+.radarbox{height:180px;position:relative}
+.impact{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.imp{background:var(--panel2);border:1px solid var(--stroke);border-radius:11px;padding:7px 10px}
+.imp .l{font-size:11px;color:var(--muted)}
+.imp .v{font-size:18px;font-weight:600;color:var(--lime)}
+.imp .v.neg{color:var(--bad)} .imp .v.na{color:var(--faint);font-size:12.5px;font-weight:400;padding:4px 0}
+.tabsc{flex:1;min-height:0;display:flex;flex-direction:column}
+.tabs2{display:flex;gap:3px;background:var(--panel2);border-radius:999px;padding:3px;margin-bottom:10px}
+.tabs2 button{flex:1;border:0;background:transparent;padding:6px 4px;border-radius:999px;color:var(--muted);cursor:pointer;font-size:12.5px;position:relative}
+.tabs2 button.on{background:rgba(255,255,255,.14);color:var(--text)}
+.tabs2 .cnt{display:none;margin-left:5px;background:var(--bad);color:#fff;border-radius:999px;font-size:10px;padding:0 5px}
+.pane{flex:1;min-height:0;overflow:auto;display:none}
+.pane.on{display:block}
+.pane::-webkit-scrollbar{width:4px}.pane::-webkit-scrollbar-thumb{background:var(--stroke2);border-radius:4px}
+.xsum{font-size:12.5px;color:var(--muted);margin-bottom:8px;line-height:1.5}
+.xsum b{color:var(--text);font-weight:600}
+.xr{margin-bottom:8px}
+.xr .top{display:flex;justify-content:space-between;font-size:12px;gap:8px}
+.xr .top span{color:var(--muted);white-space:nowrap}
+.pk{display:flex;flex-wrap:wrap;gap:2px;margin-top:3px}
+.pk i{width:9px;height:9px;border-radius:2px;background:var(--ev)}
+.pk i.r{background:var(--bad)}
+.pk i.u{background:rgba(255,255,255,.35)}
+.al{background:rgba(110,36,30,.55);border:1px solid rgba(255,116,102,.28);border-radius:14px;padding:9px 11px;margin-bottom:8px}
+.al.ok{background:rgba(26,72,52,.6);border-color:rgba(126,224,180,.3)}
+.al.gw{background:rgba(96,72,20,.6);border-color:rgba(244,195,90,.3)}
+.al .h{display:flex;gap:8px;align-items:center;font-weight:500;font-size:13px}
+.al .n{width:18px;height:18px;border-radius:50%;background:var(--bad);display:grid;place-items:center;font-size:10px;color:#fff;flex:none}
+.al.ok .n{background:var(--accent-d)} .al.gw .n{background:#c48d1c}
+.al .s{color:var(--muted);font-size:11.5px;margin:2px 0 0 26px}
+.al .d{font-size:12px;margin:5px 0 0 26px;padding-left:9px;border-left:2px solid rgba(255,255,255,.2)}
+.act{font:11.5px/1.65 "JetBrains Mono",ui-monospace,Consolas,monospace;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act b{color:var(--text);font-weight:500}.act .x{color:var(--bad)}.act .c{color:var(--cache)}
+.empty{color:var(--faint);font-size:12.5px;text-align:center;padding:18px 6px}
+
+/* dock */
+.dock{left:50%;transform:translateX(-50%);bottom:var(--gap);display:flex;align-items:center;gap:12px;padding:7px 8px;border-radius:999px;white-space:nowrap}
+.play{width:40px;height:40px;border-radius:50%;border:0;background:#fff;color:#0b1a12;cursor:pointer;display:grid;place-items:center;flex:none}
+.play svg{width:15px;height:15px}
+.dk{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
+.dk b{color:var(--text);font-weight:600;min-width:28px;display:inline-block}
+.dk input{width:84px;accent-color:var(--accent)}
+.clock{font-family:"JetBrains Mono",monospace;color:var(--text);font-size:13px}
+.vsep{width:1px;height:22px;background:var(--stroke2)}
+.pillbtn{border:1px solid var(--stroke2);background:rgba(255,255,255,.07);padding:8px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+.pillbtn:hover{background:rgba(255,255,255,.14)}
+.pillbtn.danger{border-color:rgba(255,116,102,.5);color:#ffcdc6;background:rgba(255,116,102,.14)}
+.pillbtn.danger:hover{background:rgba(255,116,102,.24)}
+
+/* threat modal */
+.modal{position:fixed;inset:0;z-index:40;display:none;place-items:center;background:rgba(4,6,5,.55)}
+.modal.open{display:grid}
+.threat{width:min(860px,calc(100vw - 40px));max-height:calc(100vh - 40px);overflow:auto;padding:20px 22px}
+.threat .hd{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}
+.threat h2{margin:0;font-weight:500;font-size:20px}
+.threat .sub{color:var(--muted);font-size:13px;margin-top:2px}
+.closex{border:1px solid var(--stroke2);background:var(--panel2);width:32px;height:32px;border-radius:50%;cursor:pointer;flex:none}
+.grp{margin-top:12px}
+.grp h4{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+.agrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.abtn{text-align:left;border:1px solid var(--stroke);background:var(--panel2);border-radius:14px;padding:11px 12px;cursor:pointer;display:flex;gap:10px;align-items:flex-start}
+.abtn:hover{border-color:rgba(255,116,102,.55);background:rgba(255,116,102,.1)}
+.abtn .ic{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;background:rgba(255,116,102,.2);color:#ffb7ad;font-size:12px;font-weight:700}
+.abtn b{display:block;font-weight:500;font-size:13px}
+.abtn em{display:block;font-style:normal;color:var(--muted);font-size:11.5px;line-height:1.35;margin-top:2px}
+.abtn .res{display:none;font-size:11.5px;margin-top:5px;color:var(--accent)}
+.abtn.done .ic{background:rgba(126,224,180,.2);color:var(--accent)}
+.abtn.done .res{display:block}
+.abtn.fail .res{display:block;color:var(--bad)}
+.abtn.na .ic{background:rgba(255,255,255,.12);color:var(--muted)}
+.abtn.na .res{display:block;color:var(--muted)}
+.abtn.busy{opacity:.55;pointer-events:none}
+.runall{white-space:nowrap;border:0;border-radius:12px;padding:10px 16px;font-weight:600;cursor:pointer;background:rgba(255,116,102,.85);color:#fff}
+
+/* map callouts */
+.callout{position:relative;width:0;height:0;pointer-events:none}
+.callout .lead{position:absolute;left:0;bottom:12px;width:1px;height:46px;background:linear-gradient(180deg,rgba(255,255,255,.85),rgba(255,255,255,.15))}
+.callout .box{position:absolute;left:-12px;bottom:58px;padding:7px 11px;border-radius:11px;background:rgba(12,15,14,.86);border:1px solid rgba(255,255,255,.22);font-size:11.5px;white-space:nowrap}
+.callout.flip .box{left:auto;right:-12px}
+.callout .nm{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px}
+.callout .st{font-size:9.5px;padding:2px 7px;border-radius:999px;background:rgba(126,224,180,.2);color:var(--accent);font-weight:700;letter-spacing:.5px}
+.callout .st.down{background:rgba(255,116,102,.22);color:var(--bad)} .callout .st.sb{background:rgba(255,255,255,.12);color:var(--muted)}
+.callout .kv{color:var(--muted);margin-top:2px}
+.callout .kv b{color:var(--text);font-family:"JetBrains Mono",monospace;font-weight:500}
+.gwdot{width:18px;height:18px;border-radius:50%;border:3px solid var(--accent);background:rgba(126,224,180,.3);box-shadow:0 0 16px var(--accent);transform:translate(-3px,-3px)}
+.gwdot.down{border-color:var(--bad);background:rgba(255,116,102,.3);box-shadow:0 0 16px var(--bad)}
+.gwdot.sb{border-color:#d7dfdb;background:rgba(255,255,255,.15);box-shadow:none}
+
+/* lab */
+.lab{left:calc(56px + var(--gap) * 2);right:var(--gap);top:calc(var(--gap) + 58px);bottom:var(--gap);padding:20px 22px;display:none;overflow:auto}
+.lab.open{display:block}
+.lab h2{margin:0;font-weight:500;font-size:21px}
+.lab .sub{color:var(--muted);margin:2px 0 14px;font-size:13px}
+.heads{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.head{background:var(--panel2);border:1px solid var(--stroke);border-radius:14px;padding:12px 14px}
+.head .v{font-size:26px;font-weight:300;letter-spacing:-.8px}
+.head .l{color:var(--muted);font-size:12px}
+.gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.fig{border-radius:14px;overflow:hidden;border:1px solid var(--stroke);background:var(--panel2)}
+.fig img{width:100%;display:block;background:#fff}
+.fig .cap{padding:9px 13px;font-size:13px}
+.fig .cap span{display:block;color:var(--muted);font-size:12px}
+.labbusy .apply{opacity:.6;pointer-events:none}
+
+.toast{position:fixed;left:50%;top:calc(var(--gap) + 60px);transform:translateX(-50%);z-index:50;padding:10px 18px;border-radius:14px;display:none;max-width:560px;text-align:center;font-size:13px;border:1px solid}
+.toast.bad{background:rgba(96,32,27,.95);border-color:rgba(255,116,102,.4)}
+.toast.ok{background:rgba(22,62,44,.95);border-color:rgba(126,224,180,.4)}
+.loading{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;padding:14px 20px;border-radius:14px;display:none;font-size:13.5px}
+@media (max-height:820px){.sw .t em{display:none}.hero .big{font-size:38px}.spark{height:36px}.radarbox{height:150px}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="shade"></div>
+
+<nav class="ui panel rail">
+  <div class="brand">QS</div>
+  <button class="rbtn on" id="navLive"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span class="tip">Live network</span></button>
+  <button class="rbtn" id="navLab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="tip">Experiment Lab</span></button>
+  <button class="rbtn" id="navThreat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M12 8v5M12 16h.01"/></svg><span class="tip">Threat simulator</span></button>
+  <div class="sp"></div>
+  <button class="rbtn" id="navFit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="tip">Fit map</span></button>
+</nav>
+
+<div class="ui title"><h1>QuantumShield Grid</h1><p>Post-quantum secure clean-energy network · Bengaluru</p></div>
+<div class="ui panel topbar"><div class="seg" id="presets"></div><div class="netinfo" id="netinfo">–</div></div>
+<div class="ui panel status"><span><span class="dot" id="conn"></span><b id="connText">Connecting</b></span><span><b id="algKem">ML-KEM-768</b> · <b id="algSig">ML-DSA-65</b> · <b>AES-256-GCM</b></span></div>
+
+<aside class="ui col left">
+  <div class="panel card hero">
+    <h3>Bandwidth saved <small id="cfgName">–</small></h3>
+    <div class="big" id="k_saved">–</div>
+    <div class="cap">fewer bytes per session than the PQC baseline, same network</div>
+    <div class="spark"><canvas id="latChart"></canvas></div>
+    <div class="sparkcap"><span>network time per session (live)</span><span id="sparkNow"></span></div>
+    <div class="minis">
+      <div class="mini"><div class="v" id="k_sessions">0</div><div class="l">PQC sessions</div></div>
+      <div class="mini"><div class="v" id="k_success">–</div><div class="l">success rate</div></div>
+      <div class="mini"><div class="v" id="k_attacks">0/0</div><div class="l">blocked</div></div>
+      <div class="mini"><div class="v" id="k_bytes">–</div><div class="l">bytes / session</div></div>
+      <div class="mini"><div class="v" id="k_lat">–</div><div class="l">network time</div></div>
+      <div class="mini"><div class="v" id="k_faster">–</div><div class="l">time saved</div></div>
+    </div>
+  </div>
+  <div class="panel card">
+    <h3>Gateway optimizations</h3>
+    <label class="sw"><div class="t"><b>Certificate caching</b><em>Returning devices send a 32-byte fingerprint, not ~5 KB of certificates</em></div><span class="tg"><input type="checkbox" id="opt_cache"><i></i></span></label>
+    <label class="sw"><div class="t"><b>Chain-transmission optimization</b><em>Skip CA certificates the gateway already trusts</em></div><span class="tg"><input type="checkbox" id="opt_chain"><i></i></span></label>
+    <label class="sw"><div class="t"><b>Gateway-assisted validation</b><em>Gateway verifies devices for the grid; no per-reading signatures</em></div><span class="tg"><input type="checkbox" id="opt_assisted"><i></i></span></label>
+    <div class="pending" id="pending">Changes apply when you press Apply &amp; run.</div>
+    <button class="apply" id="start">Apply &amp; run</button>
+  </div>
+</aside>
+
+<aside class="ui col right">
+  <div class="panel card">
+    <h3>Scenario comparison <small id="refNote">% saved vs baseline</small></h3>
+    <div class="radarbox"><canvas id="radar"></canvas></div>
+    <div class="impact" id="impact"></div>
+  </div>
+  <div class="panel card tabsc">
+    <div class="tabs2">
+      <button class="on" data-p="pXray">Packet X-Ray</button>
+      <button data-p="pAlerts">Alerts<span class="cnt" id="alertCnt"></span></button>
+      <button data-p="pAct">Activity</button>
+    </div>
+    <div class="pane on" id="pXray"><div class="xsum" id="xsum">Press play to start the network.</div><div id="xray"></div></div>
+    <div class="pane" id="pAlerts"><div class="empty" id="noAlerts">No alerts yet. Launch an attack or crash a gateway.</div></div>
+    <div class="pane" id="pAct"></div>
+  </div>
+</aside>
+
+<div class="ui panel dock">
+  <button class="play" id="play" title="Start / stop"><svg id="playIc" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg></button>
+  <div class="dk"><span class="dot" id="runDot"></span><span class="clock" id="clock">00:00</span></div>
+  <div class="vsep"></div>
+  <div class="dk">Devices <b id="devN">30</b><input type="range" id="devices" min="5" max="150" step="5" value="30"></div>
+  <div class="dk">Speed <b id="spdN">1.0×</b><input type="range" id="speed" min="0.5" max="3" step="0.5" value="1"></div>
+  <div class="vsep"></div>
+  <button class="pillbtn danger" id="crash">Crash GW_001</button>
+  <button class="pillbtn" id="recover">Recover</button>
+  <button class="pillbtn danger" id="openThreat">Launch attack</button>
+</div>
+
+<div class="modal" id="threatModal">
+  <div class="panel threat">
+    <div class="hd">
+      <div><h2>Threat simulator</h2><div class="sub">Each attack runs for real against the gateway with the current settings (<b id="threatCfg">–</b>). A secure system blocks all of them.</div></div>
+      <div style="display:flex;gap:8px"><button class="runall" id="runAll">Run all 11</button><button class="closex" id="closeThreat">✕</button></div>
+    </div>
+    <div id="attackGroups"></div>
+  </div>
+</div>
+
+<section class="ui panel lab" id="lab">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+    <div><h2>Experiment Lab</h2><div class="sub" id="labNote">100 trials × 8 configurations, 3 networks and 88 attacks. Every chart is generated from these runs.</div></div>
+    <button class="apply" id="rerun" style="width:auto;margin:0;padding:10px 18px">Re-run benchmark</button>
+  </div>
+  <div class="heads" id="labHeads"></div>
+  <div class="gallery" id="gallery"></div>
+</section>
+<div class="toast" id="toast"></div>
+<div class="panel loading" id="loading">Issuing ML-DSA certificates for every device…</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmtKB = b => b ? (b / 1024).toFixed(1) + " KB" : "–";
+const fmtMs = ms => !ms ? "–" : ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms.toFixed(0) + " ms";
+const TYPE_COLOR = {ev_charger: "#86b7ff", solar_inverter: "#f4c35a", battery: "#7ee0b4"};
+let S = null, markers = {}, gw = {}, viaCount = {}, startedAt = null, alertN = 0, settingsDirty = false;
+
+/* ---------------- map ---------------- */
+const map = L.map("map", {zoomControl: false, preferCanvas: true}).setView([12.985, 77.6], 12);
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {attribution: "Imagery © Esri", maxZoom: 18}).addTo(map);
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {maxZoom: 18, opacity: .6}).addTo(map);
+function fitAll() {
+  const pts = [...Object.values(markers).map(m => m.getLatLng()), ...Object.values(gw).map(g => g.dot.getLatLng())];
+  if (!pts.length) return;
+  const left = document.querySelector(".left").getBoundingClientRect().right + 20;
+  const right = window.innerWidth - document.querySelector(".right").getBoundingClientRect().left + 20;
+  map.fitBounds(L.latLngBounds(pts), {paddingTopLeft: [left, 140], paddingBottomRight: [right, 90]});
+}
+window.addEventListener("resize", () => setTimeout(fitAll, 100));
+function drawDevices(devs) {
+  Object.values(markers).forEach(m => map.removeLayer(m)); markers = {};
+  devs.forEach(d => markers[d.id] = L.circleMarker([d.lat, d.lon], {radius: 5, color: "#ffffff", weight: 1, opacity: .8,
+    fillColor: TYPE_COLOR[d.type], fillOpacity: 1}).bindTooltip(`${d.id} · ${d.type.replace("_", " ")}`).addTo(map));
+}
+const gwSig = {};
+function drawGateways(gws) {
+  gws.forEach(g => {
+    const cls = !g.alive ? "down" : g.active ? "" : "sb";
+    const st = !g.alive ? ["DOWN", "down"] : g.active ? ["ACTIVE", ""] : ["STANDBY", "sb"];
+    const sig = [cls, viaCount[g.name] || 0, g.cached].join("|");
+    if (!gw[g.name]) gw[g.name] = {
+      dot: L.marker([g.lat, g.lon], {icon: L.divIcon({className: "", html: "", iconSize: [12, 12]}), zIndexOffset: 900}).addTo(map),
+      call: L.marker([g.lat, g.lon], {icon: L.divIcon({className: "", html: "", iconSize: [0, 0]}), interactive: false, zIndexOffset: 1000}).addTo(map)};
+    if (gwSig[g.name] === sig) return;                          // only touch the DOM when something changed
+    gwSig[g.name] = sig;
+    gw[g.name].dot.setIcon(L.divIcon({className: "", html: `<div class="gwdot ${cls}"></div>`, iconSize: [12, 12]}));
+    gw[g.name].call.setIcon(L.divIcon({className: "", iconSize: [0, 0], html:
+      `<div class="callout ${g.name === "GW_002" ? "flip" : ""}"><div class="lead"></div><div class="box">
+        <div class="nm">${g.name}<span class="st ${st[1]}">${st[0]}</span></div>
+        <div class="kv">${g.site}</div>
+        <div class="kv">sessions <b>${(viaCount[g.name] || 0).toLocaleString()}</b> · cached certs <b>${g.cached}</b></div></div></div>`}));
+  });
+}
+const lines = [];
+function flash(id, color, gwName) {
+  const m = markers[id]; if (!m) return;
+  m.setStyle({fillColor: color, radius: 8});
+  const g = S && S.gateways.find(x => x.name === gwName);
+  if (g && lines.length < 25) {
+    const line = L.polyline([m.getLatLng(), [g.lat, g.lon]], {color, weight: 1.6, opacity: .9, dashArray: "4 6", interactive: false}).addTo(map);
+    lines.push(line);
+    setTimeout(() => { map.removeLayer(line); lines.splice(lines.indexOf(line), 1); }, 800);
+  }
+  setTimeout(() => { const t = (S.devices.find(d => d.id === id) || {}).type; m.setStyle({fillColor: TYPE_COLOR[t], radius: 5}); }, 800);
+}
+function pulse(lat, lon, color) {
+  if (lat == null) return;
+  const c = L.circle([lat, lon], {radius: 300, color, weight: 2, fillColor: color, fillOpacity: .35, interactive: false}).addTo(map);
+  let r = 300; const t = setInterval(() => { r += 180; c.setRadius(r); c.setStyle({opacity: Math.max(0, 1 - r / 2600), fillOpacity: Math.max(0, .35 - r / 7000)});
+    if (r > 2600) { clearInterval(t); map.removeLayer(c); } }, 40);
+}
+
+/* ---------------- charts ---------------- */
+Chart.defaults.color = "rgba(236,242,239,.74)"; Chart.defaults.font.family = "Outfit, system-ui"; Chart.defaults.font.size = 11;
+const latChart = new Chart($("latChart"), {type: "line", data: {labels: [], datasets: [{data: [], borderColor: "#c8f169", borderWidth: 1.6, pointRadius: 0, tension: .35, fill: true,
+  backgroundColor: "rgba(200,241,105,.14)"}]}, options: {animation: false, maintainAspectRatio: false, events: [],
+  plugins: {legend: {display: false}, tooltip: {enabled: false}}, scales: {x: {display: false}, y: {display: false, beginAtZero: true}}}});
+const AXES = ["Bytes", "Handshake", "Network time", "Packets", "Wire bytes"];
+const KEYS = ["bytes", "handshake", "latency", "packets", "wire"];
+const NICE = {cache: "Cache", chain: "Chain opt.", assisted: "Assisted", "cache+chain+assisted": "All three"};
+const COL = {cache: "#bba2ff", chain: "#86b7ff", assisted: "#f4c35a", "cache+chain+assisted": "#c8f169"};
+const radar = new Chart($("radar"), {type: "radar", data: {labels: AXES, datasets: []},
+  options: {maintainAspectRatio: false, animation: {duration: 400},
+    plugins: {legend: {position: "right", labels: {boxWidth: 8, boxHeight: 8, usePointStyle: true, padding: 8, color: "#f2f5f3", font: {size: 11}}}},
+    scales: {r: {min: 0, max: 100, ticks: {display: false, stepSize: 25}, grid: {color: "rgba(255,255,255,.12)"},
+      angleLines: {color: "rgba(255,255,255,.12)"}, pointLabels: {color: "rgba(236,242,239,.85)", font: {size: 10.5}}}}}});
+const saved = (b, v) => b > 0 ? Math.max(0, Math.min(100, (1 - v / b) * 100)) : 0;
+function drawImpactPlaceholder(text) {
+  $("impact").innerHTML = ["Bytes / session", "Network time", "Packets", "Retransmissions"].map(l => `<div class="imp"><div class="l">${l}</div><div class="v na">${text}</div></div>`).join("");
+}
+drawImpactPlaceholder("–");
+function drawReference(ref) {
+  if (!ref || !ref.baseline) { radar.data.datasets = []; radar.update(); drawImpactPlaceholder(S && S.running ? "measuring…" : "–"); $("refNote").textContent = S && S.running ? "measuring all configurations…" : "% saved vs baseline"; return; }
+  $("refNote").textContent = "% saved vs baseline";
+  const b = ref.baseline, cur = S ? S.config_name : "";
+  radar.data.datasets = Object.keys(ref).filter(k => k !== "baseline").map(k => {
+    const on = k === cur;
+    return {label: NICE[k] || k, data: KEYS.map(x => saved(b[x], ref[k][x])), borderColor: COL[k] || "#fff",
+      backgroundColor: on ? "rgba(200,241,105,.2)" : "transparent", borderWidth: on ? 2.4 : 1.1, pointRadius: on ? 2.5 : 0};
+  });
+  radar.update();
+  const c = ref[cur];
+  const tiles = [["Bytes / session", "bytes"], ["Network time", "latency"], ["Packets", "packets"], ["Retransmissions", "retx"]];
+  $("impact").innerHTML = tiles.map(([l, k]) => {
+    if (cur === "baseline" || !c) return `<div class="imp"><div class="l">${l}</div><div class="v na">baseline</div></div>`;
+    if (k === "retx" && b.retx < 0.5) return `<div class="imp"><div class="l">${l}</div><div class="v na">too few to compare</div></div>`;
+    const d = (c[k] / b[k] - 1) * 100;
+    return `<div class="imp"><div class="l">${l}</div><div class="v ${d > 0 ? "neg" : ""}">${d > 0 ? "+" : "−"}${Math.abs(d).toFixed(0)}%</div></div>`;
+  }).join("");
+}
+
+/* ---------------- rendering (batched to ~5 fps) ---------------- */
+let pending = {kpis: null, xray: null, gws: null, chart: false};
+function drawKpis(k) {
+  $("k_sessions").textContent = k.sessions.toLocaleString();
+  $("k_success").textContent = k.success_pct == null ? "–" : (k.success_pct === 100 ? "100" : k.success_pct.toFixed(1)) + "%";
+  $("k_bytes").textContent = fmtKB(k.mean_bytes);
+  $("k_lat").textContent = fmtMs(k.mean_latency_ms);
+  $("k_saved").innerHTML = k.bytes_saved_pct == null ? "–" : `${k.bytes_saved_pct.toFixed(1)}<span>%</span>`;
+  $("k_faster").textContent = k.latency_saved_pct == null ? "–" : (k.latency_saved_pct >= 0 ? "" : "+") + Math.abs(k.latency_saved_pct).toFixed(0) + "%";
+  $("k_attacks").innerHTML = `<span style="color:${k.blocked === k.attacks ? "var(--accent)" : "var(--bad)"}">${k.blocked}/${k.attacks}</span>`;
+}
+const KIND = {CLIENT_HELLO: "Client hello", SERVER_HELLO: "Server hello", CERT_REQUIRED: "Certificate requested", CLIENT_FINISH: "Client finish",
+  HANDSHAKE_RESULT: "Handshake result", TELEMETRY: "Encrypted reading", "UPSTREAM (encrypted)": "Gateway → grid (fibre)"};
+const ARROW = {up: "device → gateway", down: "gateway → device", upstream: "gateway → grid"};
+function drawXray(ev) {
+  const r = ev.record, msgs = ev.messages || [];
+  $("xsum").innerHTML = `<b>${ev.device_id}</b> → <b>${ev.via || "gateway"}</b> · ${r.cache_hit ? '<b style="color:var(--cache)">cache hit</b>' : "<b>full PQC handshake</b>"}<br>` +
+    `<b>${fmtKB(r.wire_bytes)}</b> on the wire · <b>${r.packets}</b> packets · <b style="color:${r.retransmissions ? "var(--bad)" : "inherit"}">${r.retransmissions}</b> resent · <b>${fmtMs(r.network_ms)}</b>`;
+  $("xray").innerHTML = msgs.map(m => {
+    const n = Math.min(m.packets, 48), red = Math.min(m.retransmissions, n);
+    const boxes = Array.from({length: n}, (_, i) => `<i class="${m.direction === "upstream" ? "u" : i < red ? "r" : ""}"></i>`).join("");
+    return `<div class="xr"><div class="top"><b>${KIND[m.kind] || m.kind}</b><span>${(m.payload_bytes / 1024).toFixed(1)} KB · ${m.packets} pkt${m.retransmissions ? ` · <span style="color:var(--bad)">${m.retransmissions} resent</span>` : ""}</span></div><div class="pk">${boxes}</div></div>`;
+  }).join("");
+}
+function frame() {
+  if (pending.kpis) { drawKpis(pending.kpis); pending.kpis = null; }
+  if (pending.xray) { drawXray(pending.xray); pending.xray = null; }
+  if (pending.gws) { drawGateways(pending.gws); pending.gws = null; }
+  if (pending.chart) { latChart.update("none"); pending.chart = false; }
+}
+setInterval(frame, 200);
+
+/* ---------------- alerts & activity ---------------- */
+function showPane(id) {
+  document.querySelectorAll(".tabs2 button").forEach(b => b.classList.toggle("on", b.dataset.p === id));
+  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id === id));
+  if (id === "pAlerts") { alertN = 0; $("alertCnt").style.display = "none"; }
+}
+document.querySelectorAll(".tabs2 button").forEach(b => b.onclick = () => showPane(b.dataset.p));
+function alertCard(kind, title, sub, detail) {
+  $("noAlerts").style.display = "none";
+  const d = document.createElement("div"); d.className = "al " + kind;
+  d.innerHTML = `<div class="h"><span class="n">${kind === "ok" ? "✓" : "!"}</span>${title}</div><div class="s">${sub} · ${new Date().toLocaleTimeString()}</div>${detail ? `<div class="d">${detail}</div>` : ""}`;
+  $("noAlerts").after(d);
+  const all = $("pAlerts").querySelectorAll(".al"); if (all.length > 40) all[all.length - 1].remove();
+  if (!$("pAlerts").classList.contains("on")) { alertN++; $("alertCnt").textContent = alertN; $("alertCnt").style.display = "inline"; }
+}
+let actBuf = [];
+function activity(html) { actBuf.push(html); }
+setInterval(() => {
+  if (!actBuf.length) return;
+  const a = $("pAct"); const frag = document.createDocumentFragment();
+  actBuf.splice(0).reverse().forEach(h => { const d = document.createElement("div"); d.className = "act"; d.innerHTML = h; frag.appendChild(d); });
+  a.prepend(frag); while (a.children.length > 80) a.lastChild.remove();
+}, 400);
+function toast(html, ok) { const t = $("toast"); t.className = "toast " + (ok ? "ok" : "bad"); t.innerHTML = html; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3600); }
+
+/* ---------------- state & controls ---------------- */
+let selectedPreset = "urban_5g";
+function setRunning(on) {
+  $("playIc").innerHTML = on ? '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>' : '<path d="M7 4l13 8-13 8z"/>';
+  $("runDot").classList.toggle("on", on); if (on && !startedAt) startedAt = Date.now(); if (!on) startedAt = null;
+}
+setInterval(() => { if (!startedAt) return; const s = Math.floor((Date.now() - startedAt) / 1000);
+  $("clock").textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }, 500);
+function markDirty() { settingsDirty = true; $("pending").style.display = S && S.running ? "block" : "none"; }
+["opt_cache", "opt_chain", "opt_assisted"].forEach(id => $(id).addEventListener("change", markDirty));
+function applyState(st) {
+  const hadDevices = S && S.devices.length;
+  S = st;
+  $("algKem").textContent = st.algorithms.kem; $("algSig").textContent = st.algorithms.sig;
+  $("cfgName").textContent = st.config_name; $("threatCfg").textContent = st.config_name;
+  selectedPreset = st.settings.preset;
+  $("presets").innerHTML = Object.entries(st.presets).map(([k, v]) => `<button data-k="${k}" class="${k === selectedPreset ? "on" : ""}">${v.replace(" (lossy)", "")}</button>`).join("");
+  document.querySelectorAll("#presets button").forEach(b => b.onclick = () => { selectedPreset = b.dataset.k; startRun(); });
+  const p = st.preset;
+  $("netinfo").textContent = `${p.bandwidth_mbps >= 1 ? p.bandwidth_mbps + " Mbps" : p.bandwidth_mbps * 1000 + " kbps"} · ${p.rtt_ms} ms RTT · ${p.loss_pct}% loss`;
+  if (!settingsDirty) { $("opt_cache").checked = st.settings.cache; $("opt_chain").checked = st.settings.chain_opt; $("opt_assisted").checked = st.settings.gateway_assisted; }
+  $("devices").value = st.settings.devices; $("devN").textContent = st.settings.devices;
+  drawDevices(st.devices); Object.keys(gwSig).forEach(k => delete gwSig[k]); drawGateways(st.gateways);
+  drawKpis(st.kpis); drawReference(st.reference); setRunning(st.running);
+  if (!hadDevices && st.devices.length) fitAll();
+}
+$("devices").oninput = e => $("devN").textContent = e.target.value;
+$("speed").oninput = e => $("spdN").textContent = (+e.target.value).toFixed(1) + "×";
+async function startRun() {
+  latChart.data.labels = []; latChart.data.datasets[0].data = []; latChart.update("none");
+  viaCount = {}; $("pAct").innerHTML = ""; settingsDirty = false; $("pending").style.display = "none";
+  const body = {cache: $("opt_cache").checked, chain_opt: $("opt_chain").checked, gateway_assisted: $("opt_assisted").checked,
+    preset: selectedPreset, devices: +$("devices").value, readings: 1, speed: +$("speed").value};
+  $("loading").style.display = "block";
+  try { const r = await fetch("/api/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}); applyState(await r.json()); }
+  finally { $("loading").style.display = "none"; }
+  $("xsum").textContent = "Devices are connecting…"; $("xray").innerHTML = "";
+}
+$("start").onclick = startRun;
+$("play").onclick = () => S && S.running ? fetch("/api/stop", {method: "POST"}) : startRun();
+$("crash").onclick = () => S && S.running ? fetch("/api/gateway/GW_001/fail", {method: "POST"}) : toast("Start the network first", false);
+$("recover").onclick = () => S && S.running ? fetch("/api/gateway/GW_001/recover", {method: "POST"}) : null;
+$("navFit").onclick = fitAll;
+
+/* ---------------- threat simulator ---------------- */
+const ATTACK_INFO = {
+  "Fake CA": ["Impersonation", "A device with a certificate from a look-alike, untrusted CA"],
+  "Identity Mismatch": ["Impersonation", "A device claims to be another device"],
+  "Stolen Fingerprint": ["Impersonation", "Attacker replays a victim's cached fingerprint without its private key"],
+  "Tampered Handshake Proof": ["Tampering", "The device's handshake signature is modified in transit"],
+  "Tampered Telemetry Ciphertext": ["Tampering", "An encrypted reading is altered on the way to the gateway"],
+  "Tampered Telemetry Signature (E2E)": ["Tampering", "A reading's end-to-end signature is altered"],
+  "Replayed Telemetry Packet": ["Replay", "An old encrypted reading is sent again"],
+  "Replayed Handshake Finish": ["Replay", "A recorded handshake message is replayed into a new session"],
+  "Revoked Certificate (Initial)": ["Revocation & expiry", "A revoked device tries to connect"],
+  "Revoked Certificate (Cached)": ["Revocation & expiry", "A device revoked after it was cached tries to reconnect"],
+  "Expired Certificate": ["Revocation & expiry", "A device whose certificate has expired tries to connect"]};
+let attackList = [];
+const openThreat = on => { $("threatModal").classList.toggle("open", on); $("navThreat").classList.toggle("on", on); };
+$("openThreat").onclick = () => openThreat(true); $("navThreat").onclick = () => openThreat(true); $("closeThreat").onclick = () => openThreat(false);
+$("threatModal").onclick = e => { if (e.target.id === "threatModal") openThreat(false); };
+document.addEventListener("keydown", e => { if (e.key === "Escape") openThreat(false); });
+fetch("/api/attacks").then(r => r.json()).then(list => {
+  attackList = list;
+  const groups = {};
+  list.forEach((n, i) => { const g = (ATTACK_INFO[n] || ["Other"])[0]; (groups[g] = groups[g] || []).push([n, i]); });
+  $("attackGroups").innerHTML = Object.entries(groups).map(([g, items]) => `<div class="grp"><h4>${g}</h4><div class="agrid">${items.map(([n, i]) =>
+    `<button class="abtn" data-i="${i}"><span class="ic">!</span><span><b>${n}</b><em>${(ATTACK_INFO[n] || ["", ""])[1]}</em><span class="res"></span></span></button>`).join("")}</div></div>`).join("");
+  document.querySelectorAll(".abtn").forEach(b => b.onclick = () => runAttack(b));
+});
+async function runAttack(b) {
+  b.classList.add("busy");
+  try {
+    const ev = await (await fetch("/api/attack/" + b.dataset.i, {method: "POST"})).json();
+    b.classList.remove("done", "fail", "na");
+    if (!ev.applicable) { b.classList.add("na"); b.querySelector(".ic").textContent = "–"; b.querySelector(".res").textContent = "Not applicable: devices don't sign readings in gateway-assisted mode"; return; }
+    b.classList.add(ev.blocked ? "done" : "fail");
+    b.querySelector(".ic").textContent = ev.blocked ? "✓" : "✕";
+    b.querySelector(".res").textContent = (ev.blocked ? "Blocked: " : "NOT blocked: ") + ev.reason;
+  } finally { b.classList.remove("busy"); }
+}
+$("runAll").onclick = async () => { for (const b of document.querySelectorAll(".abtn")) await runAttack(b); };
+
+/* ---------------- websocket ---------------- */
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => { $("conn").classList.add("on"); $("connText").textContent = "Live"; };
+  ws.onclose = () => { $("conn").classList.remove("on"); $("connText").textContent = "Reconnecting"; setTimeout(connect, 1500); };
+  ws.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === "state") applyState(ev.state);
+    else if (ev.type === "reference") { S.reference = ev.reference; drawReference(ev.reference); pending.kpis = ev.kpis; }
+    else if (ev.type === "session") {
+      const r = ev.record;
+      viaCount[ev.via] = (viaCount[ev.via] || 0) + 1;
+      flash(ev.device_id, !r.success ? "#ff7466" : r.cache_hit ? "#bba2ff" : "#7ee0b4", ev.via);
+      pending.kpis = ev.kpis; pending.xray = ev; if (S) { S.gateways = ev.gateways; pending.gws = ev.gateways; }
+      if (r.success) { const d = latChart.data; d.labels.push(""); d.datasets[0].data.push(r.network_ms);
+        if (d.labels.length > 80) { d.labels.shift(); d.datasets[0].data.shift(); } pending.chart = true; $("sparkNow").textContent = fmtMs(r.network_ms); }
+      const t = ev.telemetry || {};
+      activity(`<b>${ev.device_id}</b> ${r.success ? "" : '<span class="x">FAILED</span> '}${r.cache_hit ? '<span class="c">cache hit</span>' : "handshake"} · ${(r.wire_bytes / 1024).toFixed(1)} KB · ${fmtMs(r.network_ms)} · ${t.power_kw ?? "-"} kW ${t.state ?? ""}`);
+    } else if (ev.type === "attack") {
+      pending.kpis = ev.kpis;
+      if (!ev.applicable) return;
+      pulse(ev.lat, ev.lon, ev.blocked ? "#ff7466" : "#f4c35a");
+      alertCard(ev.blocked ? "" : "gw", ev.name, `${ev.blocked ? "Blocked" : "NOT blocked"} · ${ev.config}`, ev.reason);
+    } else if (ev.type === "gateway") {
+      if (S) S.gateways = ev.gateways; drawGateways(ev.gateways);
+      if (ev.action === "fail") { alertCard("gw", `${ev.name} is down`, "Failover to backup gateway", "Devices reconnect to GW_002. Session keys are never shared; replicated cached certificates keep the reconnect cheap.");
+        toast(`<b>${ev.name} crashed</b> · devices fail over to the backup gateway`, false); showPane("pAlerts"); }
+      else { alertCard("ok", `${ev.name} recovered`, "Clean restart", "Sessions and cache start empty after a crash."); toast(`<b>${ev.name} recovered</b>`, true); }
+    } else if (ev.type === "experiments_done") { document.body.classList.remove("labbusy"); loadLab(); toast("<b>Benchmark finished</b> · Experiment Lab updated", true); }
+  };
+}
+connect();
+
+/* ---------------- lab ---------------- */
+function showLab(on) { $("lab").classList.toggle("open", on); $("navLab").classList.toggle("on", on); $("navLive").classList.toggle("on", !on);
+  document.querySelectorAll(".col,.dock").forEach(x => x.style.display = on ? "none" : ""); if (on) loadLab(); }
+$("navLab").onclick = () => showLab(true); $("navLive").onclick = () => showLab(false);
+const CAPTIONS = {
+  "handshake_bytes_comparison.png": ["Handshake bytes by configuration", "First vs repeat connection, mean ± 95% CI over 100 trials"],
+  "ablation_study.png": ["Ablation study", "Each optimization alone, leave-one-out, and all combined"],
+  "network_latency_comparison.png": ["Session time on India networks", "Baseline vs all optimizations"],
+  "cumulative_bytes_timeline.png": ["Cumulative data over 50 sessions", "Built from the measured per-session means"],
+  "security_attack_matrix.png": ["Security matrix", "Every attack against every configuration"],
+  "cache_tradeoff.png": ["Cache lifetime trade-off", "Bytes saved vs revocation exposure"],
+  "readings_sweep.png": ["Savings vs traffic volume", "1 to 100 readings per session"]};
+async function loadLab() {
+  const d = await (await fetch("/api/results")).json();
+  const row = (c, conn) => d.summary.find(r => r.config === c && r.connection === conn);
+  const comb = row("cache+chain+assisted", "repeat"), b2 = row("baseline (Rural 2G (lossy))", "first"), c2 = row("cache+chain+assisted (Rural 2G (lossy))", "repeat");
+  const head = (v, l) => `<div class="head"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  $("labHeads").innerHTML = d.summary.length ? [
+    head(comb ? (+comb.total_reduction_pct).toFixed(1) + "%" : "–", "fewer bytes per session, all optimizations (warm)"),
+    head(b2 && c2 ? fmtMs(+b2.total_latency_mean_ms) + " → " + fmtMs(+c2.total_latency_mean_ms) : "–", "session time on Rural 2G, baseline → optimized"),
+    head(`${d.attacks.blocked}/${d.attacks.total}`, "attacks blocked across all configurations"),
+    head(d.summary.reduce((a, r) => a + +r.samples, 0).toLocaleString(), "measured sessions behind these results")].join("")
+    : `<div class="empty">No results yet. Click “Re-run benchmark”.</div>`;
+  const order = Object.keys(CAPTIONS);
+  $("gallery").innerHTML = d.charts.sort((a, b) => (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99).map(c => { const [t, s] = CAPTIONS[c] || [c, ""];
+    return `<div class="fig"><img src="/results/${c}?t=${Date.now()}" loading="lazy"><div class="cap">${t}<span>${s}</span></div></div>`; }).join("");
+}
+$("rerun").onclick = async () => { const r = await (await fetch("/api/experiments/run", {method: "POST"})).json();
+  document.body.classList.add("labbusy");
+  $("labNote").textContent = r.status === "started" ? "Benchmark running in the background… the charts update when it finishes (a few minutes)." : "Benchmark already running."; };
+</script>
+</body>
+</html>

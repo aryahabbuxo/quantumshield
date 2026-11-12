@@ -28,28 +28,44 @@ These contracts let all five of us build in parallel. Change them only after tel
 
 Message types are listed in `messages.py`. Each message is 1 type byte followed by length-prefixed fields, so `len(message)` equals the bytes on the wire.
 
-## 3. Network link (owner: B, replaces `link.DirectLink`)
+## 3. Network model (owner: B), `backend/network/`
 
-Any link object must provide:
+`EmulatedLink(preset, seed)` implements the same methods as `gateway.link.DirectLink`, so the real
+handshake runs over it: `run_session(..., link=EmulatedLink(RURAL_2G, seed=1))`.
 
 ```python
-up(data: bytes) -> bytes        # device -> gateway
-down(data: bytes) -> bytes      # gateway -> device
-upstream(data: bytes) -> bytes  # gateway -> grid server
-bytes_up, bytes_down, bytes_upstream, messages  # counters
-network_s: float                # total simulated network time (bandwidth, RTT, loss)
+up(data) / down(data) / upstream(data) -> data   # raises LinkFailure if a message is lost after all retries
+bytes_up, bytes_down, bytes_upstream, messages    # payload counters
+network_s, wire_bytes, packets_transmitted, packets_retransmitted
+log: list[MessageLog]                             # per message: kind, direction, bytes, packets, resent, ms
 ```
+
+Presets (one source of truth: `backend/network/presets.py`): `URBAN_5G`, `HIGHWAY_4G`, `RURAL_2G`,
+`BACKHAUL_FIBRE`; `get_preset("rural_2g")`. All values are stated assumptions until cited.
+
+## 3b. Devices and fleet (owner: B), `backend/devices/`
+
+| Use | Call |
+|---|---|
+| Telemetry simulators | `EVCharger`, `SolarInverter`, `Battery` (seeded; each has a Bangalore lat/lon) |
+| Fleet with real PQC | `build_fleet(n, config, preset, n_gateways=1, seed=0)` |
+| Run it | `await run_fleet(fleet, rounds, readings_per_session, time_scale, on_event)` returns `list[SessionRecord]` |
 
 ## 4. Metrics record (C produces, D consumes)
 
 One `SessionRecord.to_dict()` row per session:
 
-`config, device_id, connection, success, reason, cache_hit, bytes_up, bytes_down, bytes_upstream, handshake_bytes, messages, device_ms, gateway_ms, grid_ms, network_ms, total_bytes`
+`config, device_id, connection, success, reason, cache_hit, bytes_up, bytes_down, bytes_upstream, handshake_bytes, messages, device_ms, gateway_ms, grid_ms, network_ms, network, wire_bytes, packets, retransmissions, total_bytes, latency_ms`
 
-## 5. Live events (backend to E, over WebSocket)
+## 5. Live dashboard (owner: E), `backend/api/server.py` + `frontend/index.html`
 
-```json
-{"type": "handshake",      "record": {SessionRecord fields}}
-{"type": "attack_blocked", "attack": "replay", "device_id": "EV_001", "reason": "replayed message"}
-{"type": "metrics_update", "config": "baseline", "total_bytes": 69836}
-```
+Run: `python -m uvicorn backend.api.server:app --port 8000`, then open http://localhost:8000
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/start` | `{cache, chain_opt, gateway_assisted, preset, devices, speed}` starts the live fleet |
+| `POST /api/stop` | stop |
+| `GET /api/attacks`, `POST /api/attack/{i}` | run one of D's attacks against the current configuration |
+| `POST /api/gateway/GW_001/fail` / `recover` | failover demo |
+| `GET /api/results`, `POST /api/experiments/run` | Experiment Lab: charts and CSV headlines from `results/` |
+| `WS /ws` | events: `state`, `session` (record + per-message packet log), `reference`, `attack`, `gateway`, `experiments_done` |

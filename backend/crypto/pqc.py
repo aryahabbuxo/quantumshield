@@ -5,6 +5,14 @@ We never implement cryptography ourselves; liboqs does the real work.
 These wrappers only give the rest of the project a small, clean API.
 """
 from dataclasses import dataclass
+import os
+from pathlib import Path
+
+# Auto-detect local liboqs install if OQS_INSTALL_PATH not explicitly set in environment
+if "OQS_INSTALL_PATH" not in os.environ:
+    repo_oqs = Path(__file__).resolve().parent.parent.parent / "_oqs"
+    if repo_oqs.exists():
+        os.environ["OQS_INSTALL_PATH"] = str(repo_oqs)
 
 import oqs
 
