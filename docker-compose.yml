@@ -1,0 +1,16 @@
+name: quantumshield-grid
+
+services:
+  dashboard:
+    build: .
+    ports: ["8000:8000"]
+    volumes:
+      # Benchmark CSVs/charts are not stored in Git; keep them on your machine so they survive restarts.
+      - ./results:/app/results
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/state', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 10s
