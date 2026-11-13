@@ -4,3 +4,6 @@ __pycache__/
 _oqs/
 results/*.csv
 results/*.png
+
+demo/node_modules/
+demo/out/
